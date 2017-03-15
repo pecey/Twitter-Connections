@@ -2,7 +2,6 @@ import tweepy
 from configparser import SafeConfigParser
 from neo4jrestclient.client import GraphDatabase
 def connect(consumer_key, consumer_secret, access_key, access_secret):
-    print "CKey : {0} CSecret : {1} AKey : {2} ASecret : {3}".format(consumer_key, consumer_secret, access_key, access_secret)
     db = GraphDatabase("http://localhost:7474", username="neo4j", password="lionking")
     auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
     auth.set_access_token(access_key, access_secret)
@@ -20,27 +19,34 @@ def main():
     levels = 1
     user_set = set()
     users = db.labels.create("User")
-    plot(user_set, users,db,api)
+    plot(user_set, users,db,api, levels)
 
-def plot(user_set, users,db, api):
-    me = api.me()
-    user_set.add(me.id) 
-    root_node = db.nodes.create(twitter_id = me.id)
-    users.add(root_node)
-    plot_followers(me, user_set, users,db,root_node)
-                
-def plot_followers(user, user_set, users,db,user_node):
+def plot(user_set, users,db, api, levels):
+    user = api.me()
+    plot_self(user, user_set, users, db)
+    while levels > 0:
+        plot_followers(user, user_set, users, db)
+        levels = levels -1
+
+def plot_self(user, user_set, users, db):
+    if user.id not in user_set:
+        user_set.add(user.id) 
+        user_node = db.nodes.create(twitter_id = user.id)
+        users.add(user_node)
+
+def plot_followers(user, user_set, users,db):
+    user_node = users.get(twitter_id = user.id)[0] 
     followers = user.followers()
     print "No of followers : {0}".format(len(followers))
-    dir(user_node)
     for follower in followers:
         if follower.id not in user_set:
             follower_node = db.nodes.create(twitter_id = follower.id)
-            follower_node.relationships.create("followers", user_node)
             users.add(follower_node)
         else:
             follower_node = users.get(twitter_id = follower.id)
-            follower_node.relationships.create("followers", user_node)
+        follower_node.relationships.create("followers", user_node)
+        user_set.add(follower.id)
+
 
 if __name__ == "__main__":
     main()
