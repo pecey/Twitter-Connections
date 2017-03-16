@@ -16,7 +16,7 @@ def main():
     access_key = parser.get("twitter-access","public_key")
     access_secret = parser.get("twitter-access","secret_key")
     api,db = connect(consumer_key, consumer_secret, access_key, access_secret)
-    levels = 1
+    levels = 2
     user_set = set()
     users = db.labels.create("User")
     plot(user_set, users,db,api, levels)
@@ -24,15 +24,19 @@ def main():
 def plot(user_set, users,db, api, levels):
     user = api.me()
     plot_self(user, user_set, users, db)
+    current_level_users = {user}
     while levels > 0:
-        plot_followers(user, user_set, users, db)
+        next_level_users = set()
+        for user in current_level_users:
+            for follower in user.followers():
+                next_level_users.add(follower)
+            plot_followers(user, user_set, users, db)
+        current_level_users = next_level_users
         levels = levels -1
+            
 
 def plot_self(user, user_set, users, db):
-    if user.id not in user_set:
-        user_set.add(user.id) 
-        user_node = db.nodes.create(twitter_id = user.id)
-        users.add(user_node)
+    create_node(user, users, user_set, db)
 
 def plot_followers(user, user_set, users,db):
     user_node = users.get(twitter_id = user.id)[0] 
@@ -40,13 +44,18 @@ def plot_followers(user, user_set, users,db):
     print "No of followers : {0}".format(len(followers))
     for follower in followers:
         if follower.id not in user_set:
-            follower_node = db.nodes.create(twitter_id = follower.id)
-            users.add(follower_node)
-        else:
-            follower_node = users.get(twitter_id = follower.id)
-        follower_node.relationships.create("followers", user_node)
-        user_set.add(follower.id)
+            create_node(follower, users, user_set, db)
+        create_relationship(follower, user, "follower", users)
 
+def create_node(user, users, user_set, db):
+    user_node = db.nodes.create(twitter_id = user.id, twitter_login = user.screen_name)
+    users.add(user_node)
+    user_set.add(user.id)
+
+def create_relationship(source, destination, relation,users):
+    source_node = users.get(twitter_id = source.id)[0]
+    destination_node = users.get(twitter_id = destination.id)[0]
+    source_node.relationships.create(relation, destination_node)    
 
 if __name__ == "__main__":
     main()
