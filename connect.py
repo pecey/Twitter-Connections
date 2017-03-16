@@ -60,10 +60,12 @@ def get_postgres_configuration(config_file):
 
 
 
-def plot(user_set, users,db, api, levels):
-    user = api.me()
-    plot_self(user, user_set, users, db)
-    current_level_users = {user}
+def plot(initial_users,user_set, users,db, api, levels):
+    current_level_users = set()
+    for username in initial_users:
+        user = api.get_user(screen_name = username)
+        plot_self(user, user_set, users, db)
+        current_level_users.add(user)   
     while levels > 0:
         next_level_users = set()
         for user in current_level_users:
