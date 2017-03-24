@@ -2,6 +2,56 @@ import tweepy
 from configparser import SafeConfigParser
 from neo4jrestclient.client import GraphDatabase
 
+class TwitterGraph:
+    def __init__(self, config, levels):
+        twitter_configuration = config["twitter"]
+        neo4j_configuration = config["neo4j"]
+        self.api_handler = connect_to_twitter(twitter_configuration)
+        self.neo4j_handler = connect_to_neo4j(neo4j_configuration)
+        self.levels = levels
+        self.initial_users = {"pecey01"}
+        self.visited_users = set()
+        self.users = self.neo4j_handler.labels.create("User")
+
+    def create_node(self,user):
+        user_node = self.neo4j_handler.nodes.create(twitter_id = user.id, twitter_login = user.screen_name)
+        self.users.add(user_node)
+        self.visited_users.add(user.id)
+
+    def create_relationship(self,source, destination, relation):
+        source_node = self.users.get(twitter_id = source.id)[0]
+        destination_node = self.users.get(twitter_id = destination.id)[0]
+        source_node.relationships.create(relation, destination_node)
+
+    def plot_self(self,user):
+        self.create_node(user)
+
+    def plot_followers(self,user):
+        user_node = self.users.get(twitter_id = user.id)[0] 
+        followers = user.followers()
+        print "No of followers : {0}".format(len(followers))
+        for follower in followers:
+            if follower.id not in self.visited_users:
+                self.create_node(follower)
+            self.create_relationship(follower, user, "follower")
+
+    def plot(self):
+        current_level_users = set()
+        for username in self.initial_users:
+            user = self.api_handler.get_user(screen_name = username)
+            self.plot_self(user)
+            current_level_users.add(user)   
+        while self.levels > 0:
+            next_level_users = set()
+            for user in current_level_users:
+                for follower in user.followers():
+                    next_level_users.add(follower)
+                self.plot_followers(user)
+            current_level_users = next_level_users
+            self.levels = self.levels -1
+
+
+
 def connect_to_neo4j(neo4j_configuration):
     host = neo4j_configuration['host']
     username = neo4j_configuration['username']
@@ -20,13 +70,13 @@ def main():
     twitter_configuration = get_twitter_configuration(config_file)
     neo4j_configuration = get_neo4j_configuration(config_file)
     postgres_configuration =  get_postgres_configuration(config_file)
-    api = connect_to_twitter(twitter_configuration)
-    db = connect_to_neo4j(neo4j_configuration)
+    config = dict()
+    config["twitter"] = twitter_configuration
+    config["neo4j"] = neo4j_configuration
     levels = 2
-    user_set = set()
-    users = db.labels.create("User")
-    initial_users = {"pecey01"}
-    plot(initial_users,user_set, users,db,api, levels)
+    twitter_graph = TwitterGraph(config, levels)
+    twitter_graph.plot()
+
 
 def get_twitter_configuration(config_file):
     parser = SafeConfigParser()
@@ -58,45 +108,6 @@ def get_postgres_configuration(config_file):
     postgres_configuration['password'] = parser.get("postgres-credentials","password")
     return postgres_configuration
 
-
-
-def plot(initial_users,user_set, users,db, api, levels):
-    current_level_users = set()
-    for username in initial_users:
-        user = api.get_user(screen_name = username)
-        plot_self(user, user_set, users, db)
-        current_level_users.add(user)   
-    while levels > 0:
-        next_level_users = set()
-        for user in current_level_users:
-            for follower in user.followers():
-                next_level_users.add(follower)
-            plot_followers(user, user_set, users, db)
-        current_level_users = next_level_users
-        levels = levels -1
-            
-
-def plot_self(user, user_set, users, db):
-    create_node(user, users, user_set, db)
-
-def plot_followers(user, user_set, users,db):
-    user_node = users.get(twitter_id = user.id)[0] 
-    followers = user.followers()
-    print "No of followers : {0}".format(len(followers))
-    for follower in followers:
-        if follower.id not in user_set:
-            create_node(follower, users, user_set, db)
-        create_relationship(follower, user, "follower", users)
-
-def create_node(user, users, user_set, db):
-    user_node = db.nodes.create(twitter_id = user.id, twitter_login = user.screen_name)
-    users.add(user_node)
-    user_set.add(user.id)
-
-def create_relationship(source, destination, relation,users):
-    source_node = users.get(twitter_id = source.id)[0]
-    destination_node = users.get(twitter_id = destination.id)[0]
-    source_node.relationships.create(relation, destination_node)    
 
 if __name__ == "__main__":
     main()
